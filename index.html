@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galactic Tic‑Tac‑Toe: Blaster Edition</title>
+    <link rel="stylesheet" href="./style.css" />
+    <meta name="description" content="Shoot your X's and O's in a neon sci‑fi tic‑tac‑toe arena floating in deep space." />
+    <meta name="color-scheme" content="dark" />
+</head>
+<body>
+    <div id="overlay" style="display:none"></div>
+
+    <div id="hud">
+        <div id="turn">Turn: X</div>
+        <div id="status"></div>
+        <button id="restartButton" class="hidden">Restart</button>
+    </div>
+
+    
+
+    <div id="startHint">Click to Start</div>
+
+    <div id="crosshair" aria-hidden="true">
+        <div class="h"></div>
+        <div class="v"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+    <script type="module" src="./main.js"></script>
+    
+</body>
+</html>
+
+
