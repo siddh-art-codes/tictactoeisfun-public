@@ -48,9 +48,3 @@ first/
 - If audio doesn’t start, click once inside the canvas (browser autoplay policy).
 - If you see module errors, hard refresh (Cmd/Ctrl+Shift+R) to clear cache.
 
-## 🙌 Credits
-- Background music: `Little-Wishes-chosic.com_.mp3` (user‑provided file).
-- Built with ❤️ using Three.js.
-
----
-### Have fun blasting your way to three‑in‑a‑row!"} 작성자 JSON 객체에 'code_edit' 키에만 값을 입력해주세요. 다른 키는 입력하지 마세요.}
