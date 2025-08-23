@@ -217,6 +217,7 @@ async function createRoom() {
             hideLanding();
             document.body.classList.add('mp');
             startGame();
+            GAME_READY = true;
             return true;
         }
         code = randomCode5();
@@ -252,6 +253,7 @@ async function joinRoomByCode(raw) {
     hideLanding();
     document.body.classList.add('mp');
     startGame();
+    GAME_READY = true;
     return true;
 }
 
@@ -802,6 +804,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.setClearColor(0x000000, 0.0);
 document.body.appendChild(renderer.domElement);
+// Keep the game hidden behind landing until Create/Join succeeds
+renderer.domElement.id = 'gameCanvas';
+renderer.domElement.style.display = 'none';
 if (IS_MOBILE) {
     // Prevent scroll/zoom gestures interfering with aiming
     renderer.domElement.style.touchAction = 'none';
@@ -815,6 +820,7 @@ const lookKeys = { left: false, right: false, up: false, down: false };
 let velocity = new THREE.Vector3();
 let direction = new THREE.Vector3();
 let canMove = false; // wait for click to start
+let GAME_READY = false; // becomes true only after Create/Join success
 
 // --- Audio (blaster sfx + voiceover via speechSynthesis) ---
 let audioCtx;
@@ -929,6 +935,10 @@ function startGame() {
         if (!canMove) { canMove = true; document.body.classList.add('started'); }
     } else {
         if (!controls.isLocked) controls.lock();
+    }
+    // Reveal the canvas only after Create/Join success
+    if (renderer && renderer.domElement) {
+        renderer.domElement.style.display = 'block';
     }
     startBackgroundMusic();
 }
@@ -1613,6 +1623,10 @@ const pointerIdToLastPos = new Map();
 if (IS_MOBILE) {
     window.addEventListener('pointerdown', (e) => {
         if (e.pointerType !== 'touch') return;
+        // If landing is visible, ignore to prevent background start
+        if (UI.landing && !UI.landing.classList.contains('hidden')) return;
+        // Only allow game interactions after successful Create/Join
+        if (!GAME_READY) return;
         e.preventDefault();
         if (!canMove) startGame();
         if (touchAimPointerId === null) {

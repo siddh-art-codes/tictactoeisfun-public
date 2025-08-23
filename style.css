@@ -49,6 +49,7 @@ button:active { transform: translateY(1px); }
 #crosshair .v { width: 2px; height: 24px; }
 
 canvas { display: block; }
+#gameCanvas { display: none; }
 
 /* removed score HUD */
 
