@@ -34,7 +34,12 @@ button:active { transform: translateY(1px); }
 #turn { font-weight: 800; text-transform: uppercase; font-size: 2.5rem; }
 #status { min-height: 24px; font-size: 2.2rem; }
 .hidden { display: none; }
-#restartButton { display: none !important; }
+#restartButton { display: none; }
+
+/* On mobile, allow showing the restart button when JS removes .hidden */
+@media (pointer: coarse) {
+  #restartButton { display: inline-block; }
+}
 .hidden { display: none; }
 
 #crosshair { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }

@@ -4,6 +4,9 @@
 import * as THREE from 'https://esm.sh/three@0.160.0';
 import { PointerLockControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
 
+// Basic mobile detection (coarse pointer or touch-capable)
+const IS_MOBILE = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+
 // ---------- Game state ----------
 const STATE = {
     turn: 'X', // 'X' or 'O'
@@ -18,6 +21,17 @@ const UI = {
     status: document.getElementById('status'),
     restartButton: document.getElementById('restartButton'),
 };
+
+// Enable on-screen restart button interactions (useful on mobile)
+if (UI.restartButton) {
+    UI.restartButton.addEventListener('click', () => {
+        restart();
+    }, { passive: true });
+    UI.restartButton.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        restart();
+    }, { passive: false });
+}
 
 // Score HUD removed
 
@@ -553,6 +567,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.setClearColor(0x000000, 0.0);
 document.body.appendChild(renderer.domElement);
+if (IS_MOBILE) {
+    // Prevent scroll/zoom gestures interfering with aiming
+    renderer.domElement.style.touchAction = 'none';
+}
 
 const controls = new PointerLockControls(camera, document.body);
 
@@ -671,8 +689,19 @@ UI.overlay.style.display = 'none';
 const startHintEl = document.getElementById('startHint');
 function startGame() {
     ensureAudio();
-    if (!controls.isLocked) controls.lock();
+    if (IS_MOBILE) {
+        if (!canMove) {
+            canMove = true;
+            document.body.classList.add('started');
+        }
+    } else {
+        if (!controls.isLocked) controls.lock();
+    }
     startBackgroundMusic();
+}
+// Update hint copy for mobile vs desktop
+if (startHintEl) {
+    startHintEl.textContent = IS_MOBILE ? 'Tap to Start' : 'Click to Start';
 }
 window.addEventListener('click', () => {
     if (!canMove) startGame();
@@ -1203,16 +1232,8 @@ const raycaster = new THREE.Raycaster();
 
 // Fire logic — place mark if hitting an empty tile
 let firstShotAfterLock = false;
-window.addEventListener('mousedown', (e) => {
-    // Allow shooting restart button even after gameOver
+function fireShot() {
     if (!canMove) return;
-    if (e.button !== 0) return; // left click only
-    if (!controls.isLocked) {
-        controls.lock();
-        firstShotAfterLock = true;
-        return; // don't fire when initiating lock
-    }
-    if (firstShotAfterLock) { firstShotAfterLock = false; return; }
     playBlaster();
     spawnProjectile();
 
@@ -1255,6 +1276,20 @@ window.addEventListener('mousedown', (e) => {
             }
         }
     }, 80);
+}
+
+window.addEventListener('mousedown', (e) => {
+    if (IS_MOBILE) return; // mobile uses pointer/touch handlers
+    // Allow shooting restart button even after gameOver
+    if (!canMove) return;
+    if (e.button !== 0) return; // left click only
+    if (!controls.isLocked) {
+        controls.lock();
+        firstShotAfterLock = true;
+        return; // don't fire when initiating lock
+    }
+    if (firstShotAfterLock) { firstShotAfterLock = false; return; }
+    fireShot();
 });
 
 // Mouse look fallback (when not pointer-locked)
@@ -1266,8 +1301,55 @@ window.addEventListener('mousemove', (e) => {
     camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
 });
 
-// Hide top-right restart button (we use 3D restart)
-if (UI.restartButton) {
+// Touch controls: one finger aims, second finger taps shoots (mobile only)
+let touchAimPointerId = null;
+const pointerIdToLastPos = new Map();
+if (IS_MOBILE) {
+    window.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'touch') return;
+        e.preventDefault();
+        if (!canMove) startGame();
+        if (touchAimPointerId === null) {
+            touchAimPointerId = e.pointerId;
+            pointerIdToLastPos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        } else {
+            // Second finger tap shoots immediately
+            fireShot();
+        }
+    }, { passive: false });
+
+    window.addEventListener('pointermove', (e) => {
+        if (e.pointerType !== 'touch') return;
+        if (!canMove) return;
+        if (e.pointerId !== touchAimPointerId) return;
+        e.preventDefault();
+        const prev = pointerIdToLastPos.get(e.pointerId);
+        if (!prev) {
+            pointerIdToLastPos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            return;
+        }
+        const dx = e.clientX - prev.x;
+        const dy = e.clientY - prev.y;
+        pointerIdToLastPos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const sensitivity = 0.0030; // slightly higher for touch
+        controls.getObject().rotation.y -= dx * sensitivity;
+        camera.rotation.x -= dy * sensitivity;
+        camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+    }, { passive: false });
+
+    const clearTouchPointer = (e) => {
+        if (e.pointerType !== 'touch') return;
+        pointerIdToLastPos.delete(e.pointerId);
+        if (e.pointerId === touchAimPointerId) {
+            touchAimPointerId = null;
+        }
+    };
+    window.addEventListener('pointerup', clearTouchPointer);
+    window.addEventListener('pointercancel', clearTouchPointer);
+}
+
+// Hide top-right restart button on desktop (R key/3D flow), show via JS on mobile when needed
+if (UI.restartButton && !IS_MOBILE) {
     UI.restartButton.style.display = 'none';
 }
 
