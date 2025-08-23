@@ -31,6 +31,7 @@ button:active { transform: translateY(1px); }
     z-index: 2;
 }
 #hud > * { pointer-events: auto; }
+#landing, #landing * { touch-action: auto; }
 #turn { font-weight: 800; text-transform: uppercase; font-size: 2.5rem; }
 #status { min-height: 24px; font-size: 2.2rem; }
 .hidden { display: none; }

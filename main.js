@@ -934,7 +934,13 @@ function startGame() {
 if (startHintEl) {
     startHintEl.textContent = IS_MOBILE ? 'Tap to Start' : 'Click to Start';
 }
-window.addEventListener('click', () => {
+window.addEventListener('click', (e) => {
+    // Don't hijack clicks on inputs/buttons (so mobile keyboard can open)
+    const t = e.target;
+    const tag = (t && t.tagName) ? t.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'button' || tag === 'select' || tag === 'textarea' || (t && t.closest && t.closest('#landing'))) {
+        return;
+    }
     if (!canMove) startGame();
 });
 controls.addEventListener('lock', () => { canMove = true; document.body.classList.add('started'); });
