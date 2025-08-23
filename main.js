@@ -14,12 +14,50 @@ const STATE = {
     gameOver: false,
 };
 
+// Multiplayer session state (Two Player mode)
+const MULTI = {
+    mode: 'single', // 'single' | 'multi'
+    player: null,   // 'X' | 'O' when in multi
+    code: null,     // 5-digit room code (string)
+    app: null,
+    db: null,
+    fs: null,       // firestore module namespace
+    roomRef: null,
+    unsub: null,
+    shotUsed: false,
+    clientId: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random()),
+};
+
 const UI = {
     overlay: document.getElementById('overlay'),
     startButton: document.getElementById('startButton'),
     turn: document.getElementById('turn'),
     status: document.getElementById('status'),
     restartButton: document.getElementById('restartButton'),
+    // Multiplayer controls
+    singleBtn: document.getElementById('singleBtn'),
+    multiBtn: document.getElementById('multiBtn'),
+    mpControls: document.getElementById('mpControls'),
+    createRoomBtn: document.getElementById('createRoomBtn'),
+    joinRoomBtn: document.getElementById('joinRoomBtn'),
+    joinCodeInput: document.getElementById('joinCodeInput'),
+    mpCode: document.getElementById('mpCode'),
+    roomCode: document.getElementById('roomCode'),
+    copyRoomBtn: document.getElementById('copyRoomBtn'),
+    mpNote: document.getElementById('mpNote'),
+    // New landing + top-right code UI
+    landing: document.getElementById('landing'),
+    landingCreate: document.getElementById('landingCreate'),
+    landingJoin: document.getElementById('landingJoin'),
+    landingJoinInput: document.getElementById('landingJoinInput'),
+    landingNote: document.getElementById('landingNote'),
+    codeTopRight: document.getElementById('codeTopRight'),
+    roomCodeTop: document.getElementById('roomCodeTop'),
+    copyTopBtn: document.getElementById('copyTopBtn'),
+    // Inline code (mobile)
+    codeInline: document.getElementById('codeInline'),
+    roomCodeInline: document.getElementById('roomCodeInline'),
+    copyInlineBtn: document.getElementById('copyInlineBtn'),
 };
 
 // Enable on-screen restart button interactions (useful on mobile)
@@ -31,6 +69,201 @@ if (UI.restartButton) {
         e.preventDefault();
         restart();
     }, { passive: false });
+}
+
+// ---------- Multiplayer helpers ----------
+function updateTurnHUD() {
+    const turnText = `Turn: ${STATE.turn}`;
+    if (MULTI.mode === 'multi' && MULTI.player) {
+        const suffix = (STATE.turn === MULTI.player) ? ' (You)' : ' (Opponent)';
+        UI.turn.textContent = turnText + suffix;
+    } else {
+        UI.turn.textContent = turnText;
+    }
+}
+
+function setMpNote(text) {
+    if (UI.mpNote) UI.mpNote.textContent = text || '';
+    if (UI.landingNote) UI.landingNote.textContent = text || '';
+}
+
+function hideLanding() { if (UI.landing) UI.landing.classList.add('hidden'); }
+function showLanding() { if (UI.landing) UI.landing.classList.remove('hidden'); }
+function showTopCode(code) {
+    if (UI.roomCodeTop) UI.roomCodeTop.textContent = code || '';
+    if (UI.codeTopRight) UI.codeTopRight.classList.toggle('hidden', !code);
+    if (UI.roomCodeInline) UI.roomCodeInline.textContent = code || '';
+    if (UI.codeInline) UI.codeInline.classList.toggle('hidden', !code);
+}
+
+function setModeSingle() {
+    if (MULTI.unsub) { try { MULTI.unsub(); } catch(_){} MULTI.unsub = null; }
+    MULTI.mode = 'single';
+    MULTI.player = null;
+    MULTI.code = null;
+    MULTI.roomRef = null;
+    if (UI.mpControls) UI.mpControls.classList.add('hidden');
+    if (UI.mpCode) UI.mpCode.classList.add('hidden');
+    if (UI.roomCode) UI.roomCode.textContent = '';
+    if (UI.singleBtn) UI.singleBtn.setAttribute('aria-pressed', 'true');
+    if (UI.multiBtn) UI.multiBtn.setAttribute('aria-pressed', 'false');
+    setMpNote('');
+    updateTurnHUD();
+}
+
+async function ensureFirebase() {
+    if (MULTI.db) return MULTI.db;
+    const cfg = window.FIREBASE_CONFIG;
+    if (!cfg) throw new Error('Two Player requires window.FIREBASE_CONFIG');
+    const appMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    const fs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    MULTI.app = appMod.initializeApp(cfg);
+    MULTI.db = fs.getFirestore(MULTI.app);
+    MULTI.fs = fs;
+    return MULTI.db;
+}
+
+async function setModeMulti() {
+    if (UI.singleBtn) UI.singleBtn.setAttribute('aria-pressed', 'false');
+    if (UI.multiBtn) UI.multiBtn.setAttribute('aria-pressed', 'true');
+    if (UI.mpControls) UI.mpControls.classList.remove('hidden');
+    MULTI.mode = 'multi';
+    MULTI.player = null;
+    MULTI.code = null;
+    try {
+        await ensureFirebase();
+        setMpNote('Create or join with a 5-digit code.');
+    } catch (e) {
+        setMpNote('Two Player unavailable: missing Firebase config.');
+    }
+    // Mobile: focus join input for quick typing
+    if (UI.joinCodeInput) {
+        try { UI.joinCodeInput.focus({ preventScroll: true }); UI.joinCodeInput.select && UI.joinCodeInput.select(); } catch (_) {}
+    }
+    if (UI.landingJoinInput) {
+        try { UI.landingJoinInput.focus({ preventScroll: true }); UI.landingJoinInput.select && UI.landingJoinInput.select(); } catch (_) {}
+    }
+    if (UI.landingNote) UI.landingNote.classList.remove('error');
+    updateTurnHUD();
+}
+
+function randomCode5() {
+    const n = Math.floor(10000 + Math.random()*90000);
+    return String(n);
+}
+
+function applyRemoteState(remote) {
+    if (!remote) return;
+    const remoteBoard = Array.isArray(remote.board) ? remote.board.slice(0,9) : Array(9).fill(null);
+    const wasEmptyLocal = !STATE.board.some(Boolean);
+    const isEmptyRemote = !remoteBoard.some(Boolean);
+    if (!wasEmptyLocal && isEmptyRemote) {
+        localRestartVisualOnly();
+    }
+    for (let i=0;i<9;i++) {
+        const localVal = STATE.board[i];
+        const remoteVal = remoteBoard[i];
+        if (localVal !== remoteVal) {
+            if (localVal && !remoteVal) { continue; }
+            if (!localVal && remoteVal) {
+                placeMark(i, remoteVal);
+            }
+            STATE.board[i] = remoteVal;
+        }
+    }
+    STATE.turn = remote.turn || 'X';
+    STATE.gameOver = !!remote.gameOver;
+    updateTurnHUD();
+    const evalRes = evaluateBoard(STATE.board);
+    if (STATE.gameOver) {
+        if (evalRes.winner) {
+            showBanner(`Player ${evalRes.winner} wins!`);
+            UI.status.textContent = `Player ${evalRes.winner} wins!`;
+        } else {
+            showBanner('Draw game');
+            UI.status.textContent = 'Draw game';
+        }
+        UI.restartButton.classList.remove('hidden');
+        if (evalRes.winner && !boardGroup.userData.winLine) {
+            highlightWin(evalRes.line);
+        }
+    } else {
+        UI.status.textContent = '';
+    }
+    if (MULTI.mode === 'multi' && MULTI.player && STATE.turn === MULTI.player) {
+        MULTI.shotUsed = false;
+    }
+}
+
+async function createRoom() {
+    try { await ensureFirebase(); } catch (e) { setMpNote('Add Firebase config to enable Two Player.'); return; }
+    const fs = MULTI.fs;
+    let code = randomCode5();
+    let attempts = 0;
+    while (attempts < 5) {
+        const ref = fs.doc(MULTI.db, 'rooms', code);
+        const snap = await fs.getDoc(ref);
+        if (!snap.exists()) {
+            const data = { board: Array(9).fill(null), turn: 'X', gameOver: false, createdAt: fs.serverTimestamp(), hostId: MULTI.clientId, version: 1 };
+            await fs.setDoc(ref, data, { merge: false });
+            MULTI.player = 'X';
+            MULTI.mode = 'multi';
+            MULTI.code = code;
+            MULTI.roomRef = ref;
+            if (UI.roomCode) UI.roomCode.textContent = code;
+            showTopCode(code);
+            setMpNote('Share the code with your friend. You are X.');
+            subscribeRoom(ref);
+            hideLanding();
+            document.body.classList.add('mp');
+            return true;
+        }
+        code = randomCode5();
+        attempts++;
+    }
+    setMpNote('Failed to create room, try again.');
+    return false;
+}
+
+async function joinRoomByCode(raw) {
+    const code = (raw || '').trim();
+    if (!/^\d{5}$/.test(code)) { setMpNote('Enter a valid 5-digit code.'); if (UI.landingNote) UI.landingNote.classList.add('error'); return false; }
+    try { await ensureFirebase(); } catch (e) { setMpNote('Add Firebase config to enable Two Player.'); return; }
+    const fs = MULTI.fs;
+    const ref = fs.doc(MULTI.db, 'rooms', code);
+    try {
+        const snap = await fs.getDoc(ref);
+        if (!snap.exists()) { setMpNote('Room not found.'); if (UI.landingNote) UI.landingNote.classList.add('error'); return false; }
+    } catch (err) {
+        setMpNote('Unable to reach server. Try again.');
+        if (UI.landingNote) UI.landingNote.classList.add('error');
+        return false;
+    }
+    MULTI.player = 'O';
+    MULTI.mode = 'multi';
+    MULTI.code = code;
+    MULTI.roomRef = ref;
+    if (UI.roomCode) UI.roomCode.textContent = code;
+    showTopCode(code);
+    setMpNote('Joined. You are O.');
+    try { await fs.setDoc(ref, { guestJoinedAt: fs.serverTimestamp() }, { merge: true }); } catch(_){}
+    subscribeRoom(ref);
+    hideLanding();
+    document.body.classList.add('mp');
+    return true;
+}
+
+function subscribeRoom(ref) {
+    if (MULTI.unsub) { try { MULTI.unsub(); } catch(_){} }
+    const fs = MULTI.fs;
+    MULTI.unsub = fs.onSnapshot(ref, (doc) => {
+        if (!doc.exists()) return;
+        const data = doc.data();
+        applyRemoteState(data);
+    }, (err) => {
+        setMpNote('Connection lost.');
+        console.error(err);
+    });
 }
 
 // Score HUD removed
@@ -689,11 +922,9 @@ UI.overlay.style.display = 'none';
 const startHintEl = document.getElementById('startHint');
 function startGame() {
     ensureAudio();
+    // Allow starting without pointer lock from landing; we lock on first canvas click
     if (IS_MOBILE) {
-        if (!canMove) {
-            canMove = true;
-            document.body.classList.add('started');
-        }
+        if (!canMove) { canMove = true; document.body.classList.add('started'); }
     } else {
         if (!controls.isLocked) controls.lock();
     }
@@ -708,6 +939,31 @@ window.addEventListener('click', () => {
 });
 controls.addEventListener('lock', () => { canMove = true; document.body.classList.add('started'); });
 controls.addEventListener('unlock', () => { canMove = false; document.body.classList.remove('started'); if (startHintEl) startHintEl.style.display = ''; });
+
+// Wire up multiplayer UI
+// New landing events
+if (UI.landingCreate) UI.landingCreate.addEventListener('click', async () => { setModeMulti(); const ok = await createRoom(); if (ok) hideLanding(); });
+if (UI.landingJoin) UI.landingJoin.addEventListener('click', async () => {
+    await setModeMulti();
+    const raw = UI.landingJoinInput && UI.landingJoinInput.value;
+    const ok = await joinRoomByCode(raw);
+    if (ok) hideLanding();
+});
+if (UI.landingJoinInput) UI.landingJoinInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+        await setModeMulti();
+        const ok = await joinRoomByCode(UI.landingJoinInput.value);
+        if (ok) hideLanding();
+    }
+});
+// Copy buttons
+const copyCode = async (code) => {
+    if (!code) return;
+    try { await navigator.clipboard.writeText(code); setMpNote('Code copied'); setTimeout(()=>setMpNote(''), 1200); } catch(_) { setMpNote('Copy failed'); setTimeout(()=>setMpNote(''), 1200); }
+};
+if (UI.copyRoomBtn) UI.copyRoomBtn.addEventListener('click', async () => copyCode(UI.roomCode && UI.roomCode.textContent));
+if (UI.copyTopBtn) UI.copyTopBtn.addEventListener('click', async () => copyCode(UI.roomCodeTop && UI.roomCodeTop.textContent));
+if (UI.copyInlineBtn) UI.copyInlineBtn.addEventListener('click', async () => copyCode(UI.roomCodeInline && UI.roomCodeInline.textContent));
 
 // Lighting — neon sci‑fi
 const hemiLight = new THREE.HemisphereLight(0x405cff, 0x001133, 1.0);
@@ -1232,12 +1488,60 @@ const raycaster = new THREE.Raycaster();
 
 // Fire logic — place mark if hitting an empty tile
 let firstShotAfterLock = false;
-function fireShot() {
+async function fireShot() {
     if (!canMove) return;
+    if (MULTI.mode === 'multi') {
+        if (STATE.gameOver) return;
+        if (!MULTI.player || STATE.turn !== MULTI.player) return;
+        if (MULTI.shotUsed) return;
+        playBlaster();
+        spawnProjectile();
+        setTimeout(async () => {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(interactables, false);
+            let hitIdx = null;
+            if (intersects.length) {
+                const obj = intersects[0].object;
+                if (obj.userData.type === 'tile') {
+                    hitIdx = obj.userData.index;
+                }
+            }
+            MULTI.shotUsed = true;
+            try {
+                const fs = MULTI.fs;
+                if (!fs || !MULTI.roomRef) return;
+                await fs.runTransaction(MULTI.db, async (tx) => {
+                    const snap = await tx.get(MULTI.roomRef);
+                    if (!snap.exists()) return;
+                    const data = snap.data();
+                    if (data.gameOver) return;
+                    if (data.turn !== MULTI.player) return;
+                    const board = Array.isArray(data.board) ? data.board.slice(0,9) : Array(9).fill(null);
+                    let placed = false;
+                    if (hitIdx != null && board[hitIdx] == null) {
+                        board[hitIdx] = MULTI.player;
+                        placed = true;
+                    }
+                    const res = evaluateBoard(board);
+                    const over = !!(res.winner || res.draw);
+                    const nextTurn = over ? data.turn : (data.turn === 'X' ? 'O' : 'X');
+                    tx.set(MULTI.roomRef, {
+                        board,
+                        turn: nextTurn,
+                        gameOver: over,
+                        lastMove: { idx: placed ? hitIdx : null, by: MULTI.player, missed: !placed, at: fs.serverTimestamp() },
+                    }, { merge: true });
+                });
+            } catch (err) {
+                console.error(err);
+                setMpNote('Shot not applied.');
+            }
+        }, 80);
+        return;
+    }
+    // single player flow
     playBlaster();
     spawnProjectile();
-
-    // short delay to feel like projectile travel before checking hit
     setTimeout(() => {
         raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
         const intersects = raycaster.intersectObjects(interactables, false);
@@ -1259,7 +1563,6 @@ function fireShot() {
                         UI.status.textContent = msg;
                         showBanner(msg);
                         speak(msg);
-                        // score HUD removed
                         UI.restartButton.classList.remove('hidden');
                     } else if (result.draw) {
                         STATE.gameOver = true;
@@ -1270,7 +1573,7 @@ function fireShot() {
                         UI.restartButton.classList.remove('hidden');
                     } else {
                         STATE.turn = STATE.turn === 'X' ? 'O' : 'X';
-                        UI.turn.textContent = `Turn: ${STATE.turn}`;
+                        updateTurnHUD();
                     }
                 }
             }
@@ -1353,11 +1656,10 @@ if (UI.restartButton && !IS_MOBILE) {
     UI.restartButton.style.display = 'none';
 }
 
-function restart() {
+function localRestartVisualOnly() {
     STATE.board.fill(null);
     STATE.turn = 'X';
     STATE.gameOver = false;
-    UI.turn.textContent = 'Turn: X';
     UI.status.textContent = '';
     UI.restartButton.classList.add('hidden');
     hideBanner();
@@ -1366,12 +1668,10 @@ function restart() {
         t.material.opacity = 0.35;
         if (t.userData.markMesh) {
             t.remove(t.userData.markMesh);
-            // dispose nested geometries safely
             if (t.userData.markMesh.geometry) t.userData.markMesh.geometry.dispose();
             if (t.userData.markMesh.children && t.userData.markMesh.children.length) {
                 t.userData.markMesh.children.forEach((child) => child.geometry && child.geometry.dispose());
             }
-            // material reused per mark type; disposing individually can break others
             t.userData.markMesh = undefined;
         }
         if (t.userData.glow) {
@@ -1380,12 +1680,33 @@ function restart() {
             t.userData.glow = undefined;
         }
     });
-    // remove win line if exists
     if (boardGroup.userData.winLine) {
         boardGroup.remove(boardGroup.userData.winLine);
         boardGroup.userData.winLine.geometry.dispose();
         boardGroup.userData.winLine = undefined;
     }
+    updateTurnHUD();
+}
+
+async function restart() {
+    if (MULTI.mode === 'multi' && MULTI.roomRef && MULTI.fs) {
+        const fs = MULTI.fs;
+        try {
+            await fs.setDoc(MULTI.roomRef, {
+                board: Array(9).fill(null),
+                turn: 'X',
+                gameOver: false,
+                lastMove: null,
+                resetAt: fs.serverTimestamp(),
+            }, { merge: true });
+            setMpNote('Game reset.');
+        } catch (e) {
+            console.error(e);
+            setMpNote('Failed to reset.');
+        }
+        return;
+    }
+    localRestartVisualOnly();
 }
 
 // Create X/O meshes

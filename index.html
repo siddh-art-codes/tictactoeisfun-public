@@ -16,13 +16,28 @@
 
     <div id="hud">
         <div id="turn">Turn: X</div>
+        <div id="codeInline" class="hidden">Code: <span id="roomCodeInline"></span> <button id="copyInlineBtn" title="Copy">Copy</button></div>
         <div id="status"></div>
         <button id="restartButton" class="hidden">Restart</button>
     </div>
 
-    
+    <div id="codeTopRight" class="hidden">Code: <span id="roomCodeTop"></span> <button id="copyTopBtn" title="Copy">Copy</button></div>
 
     <div id="startHint">Click to Start</div>
+
+    <div id="landing">
+        <div class="panel">
+            <h1>Galactic Tic‑Tac‑Toe</h1>
+            <div class="actions">
+                <button id="landingCreate">Create</button>
+                <div class="joinRow">
+                    <input id="landingJoinInput" placeholder="Enter 5-digit code" maxlength="5" inputmode="numeric" pattern="[0-9]*" />
+                    <button id="landingJoin">Join</button>
+                </div>
+                <div id="landingNote" class="note"></div>
+            </div>
+        </div>
+    </div>
 
     <div id="crosshair" aria-hidden="true">
         <div class="h"></div>
@@ -35,6 +50,17 @@
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
         }
     }
+    </script>
+    <script>
+      window.FIREBASE_CONFIG = {
+        apiKey: "AIzaSyAWTsBiLmP-xrybpJfyHsllaCBcn0sFqmc",
+        authDomain: "tictactoeisfun.firebaseapp.com",
+        projectId: "tictactoeisfun",
+        storageBucket: "tictactoeisfun.firebasestorage.app",
+        messagingSenderId: "903412653612",
+        appId: "1:903412653612:web:c2ec473b07adeaec923b89",
+        measurementId: "G-ZRC1VVN8D4"
+      };
     </script>
     <script type="module" src="./main.js?v=20250823"></script>
     
