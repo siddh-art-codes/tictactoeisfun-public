@@ -216,6 +216,7 @@ async function createRoom() {
             subscribeRoom(ref);
             hideLanding();
             document.body.classList.add('mp');
+            startGame();
             return true;
         }
         code = randomCode5();
@@ -250,6 +251,7 @@ async function joinRoomByCode(raw) {
     subscribeRoom(ref);
     hideLanding();
     document.body.classList.add('mp');
+    startGame();
     return true;
 }
 
@@ -934,14 +936,9 @@ function startGame() {
 if (startHintEl) {
     startHintEl.textContent = IS_MOBILE ? 'Tap to Start' : 'Click to Start';
 }
+// Disable global auto-start. Game starts only after Create or successful Join.
 window.addEventListener('click', (e) => {
-    // Don't hijack clicks on inputs/buttons (so mobile keyboard can open)
-    const t = e.target;
-    const tag = (t && t.tagName) ? t.tagName.toLowerCase() : '';
-    if (tag === 'input' || tag === 'button' || tag === 'select' || tag === 'textarea' || (t && t.closest && t.closest('#landing'))) {
-        return;
-    }
-    if (!canMove) startGame();
+    // Intentionally do nothing so background doesn't start during UI taps.
 });
 controls.addEventListener('lock', () => { canMove = true; document.body.classList.add('started'); });
 controls.addEventListener('unlock', () => { canMove = false; document.body.classList.remove('started'); if (startHintEl) startHintEl.style.display = ''; });
